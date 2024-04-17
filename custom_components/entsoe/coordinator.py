@@ -54,7 +54,7 @@ class EntsoeCoordinator(DataUpdateCoordinator):
             hass,
             logger,
             name="ENTSO-e coordinator",
-            update_interval=timedelta(minutes=60),
+            update_interval=timedelta(minutes=4*60),
         )
 
     def calc_price(self, value, fake_dt=None, no_template=False) -> float:
@@ -99,11 +99,21 @@ class EntsoeCoordinator(DataUpdateCoordinator):
 
         data = await self.fetch_prices(yesterday, tomorrow)
         if data is not None:
+            #self.logger.debug("data:",str(data))
             parsed_data = self.parse_hourprices(data)
+            #self.logger.debug("parsed_data:",str(parsed_data))
             data_all = parsed_data[-48:].to_dict()
+            self.logger.debug("data_all:")            
+            self.logger.debug(data_all)
             if parsed_data.size > 48:
                 data_today = parsed_data[-48:-24].to_dict()
+                self.logger.debug("today:")
+                self.logger.debug(data_today)
+                
                 data_tomorrow = parsed_data[-24:].to_dict()
+                self.logger.debug("tomorrow:")
+                self.logger.debug(data_tomorrow)
+                
             else:
                 data_today = parsed_data[-24:].to_dict()
                 data_tomorrow = {}
@@ -165,6 +175,8 @@ class EntsoeCoordinator(DataUpdateCoordinator):
 
     def processed_data(self):
         filtered_hourprices = self._filter_calculated_hourprices(self.data)
+        self.logger.debug("self.data tomorrow:")
+        self.logger.debug(self.data["dataTomorrow"])
         return {
             "current_price": self.get_current_hourprice(self.data["data"]),
             "next_hour_price": self.get_next_hourprice(self.data["data"]),

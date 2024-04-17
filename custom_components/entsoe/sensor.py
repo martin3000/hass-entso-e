@@ -1,95 +1,23 @@
 """ENTSO-e current electricity and gas price information service."""
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass
 from datetime import timedelta
 import logging
 from typing import Any
 
 import pandas as pd
 
-from homeassistant.components.sensor import DOMAIN, RestoreSensor, SensorDeviceClass, SensorEntityDescription, SensorExtraStoredData, SensorStateClass
+from homeassistant.components.sensor import DOMAIN, SensorStateClass, SensorDeviceClass, RestoreSensor, SensorExtraStoredData
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import (
-    CONF_CURRENCY,
-    PERCENTAGE,
-    UnitOfEnergy,
-)
 from homeassistant.core import HassJob, HomeAssistant
 from homeassistant.helpers import event
-from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import utcnow
-from .const import ATTRIBUTION, CONF_COORDINATOR, CONF_ENTITY_NAME, DOMAIN, ICON
+from .const import ATTRIBUTION, CONF_COORDINATOR, CONF_ENTITY_NAME, DOMAIN, EntsoeEntityDescription, ICON, SENSOR_TYPES
 from .coordinator import EntsoeCoordinator
 
 _LOGGER = logging.getLogger(__name__)
-
-@dataclass
-class EntsoeEntityDescription(SensorEntityDescription):
-    """Describes ENTSO-e sensor entity."""
-
-    value_fn: Callable[[dict], StateType] = None
-
-
-def sensor_descriptions(currency: str) -> tuple[EntsoeEntityDescription, ...]:
-    """Construct EntsoeEntityDescription."""
-    return (
-        EntsoeEntityDescription(
-            key="current_price",
-            name="Current electricity market price",
-            native_unit_of_measurement=f"{currency}/{UnitOfEnergy.KILO_WATT_HOUR}",
-            value_fn=lambda data: data["current_price"],
-            state_class=SensorStateClass.MEASUREMENT
-        ),
-        EntsoeEntityDescription(
-            key="next_hour_price",
-            name="Next hour electricity market price",
-            native_unit_of_measurement=f"{currency}/{UnitOfEnergy.KILO_WATT_HOUR}",
-            value_fn=lambda data: data["next_hour_price"],
-        ),
-        EntsoeEntityDescription(
-            key="min_price",
-            name="Lowest energy price today",
-            native_unit_of_measurement=f"{currency}/{UnitOfEnergy.KILO_WATT_HOUR}",
-            value_fn=lambda data: data["min_price"],
-        ),
-        EntsoeEntityDescription(
-            key="max_price",
-            name="Highest energy price today",
-            native_unit_of_measurement=f"{currency}/{UnitOfEnergy.KILO_WATT_HOUR}",
-            value_fn=lambda data: data["max_price"],
-        ),
-        EntsoeEntityDescription(
-            key="avg_price",
-            name="Average electricity price today",
-            native_unit_of_measurement=f"{currency}/{UnitOfEnergy.KILO_WATT_HOUR}",
-            value_fn=lambda data: data["avg_price"],
-        ),
-        EntsoeEntityDescription(
-            key="percentage_of_max",
-            name="Current percentage of highest electricity price today",
-            native_unit_of_measurement=f"{PERCENTAGE}",
-            icon="mdi:percent",
-            value_fn=lambda data: round(
-                data["current_price"] / data["max_price"] * 100, 1
-            ),
-        ),
-        EntsoeEntityDescription(
-            key="highest_price_time_today",
-            name="Time of highest price today",
-            device_class=SensorDeviceClass.TIMESTAMP,
-            value_fn=lambda data: data["time_max"],
-        ),
-        EntsoeEntityDescription(
-            key="lowest_price_time_today",
-            name="Time of lowest price today",
-            device_class=SensorDeviceClass.TIMESTAMP,
-            value_fn=lambda data: data["time_min"],
-        ),
-    )
 
 
 async def async_setup_entry(
@@ -102,7 +30,7 @@ async def async_setup_entry(
 
     entities = []
     entity = {}
-    for description in sensor_descriptions(currency = config_entry.options[CONF_CURRENCY]):
+    for description in SENSOR_TYPES:
         entity = description
         entities.append(
             EntsoeSensor(
@@ -149,7 +77,7 @@ class EntsoeSensor(CoordinatorEntity, RestoreSensor):
 
     _attr_attribution = ATTRIBUTION
     _attr_icon = ICON
-    _attr_state_class = SensorStateClass.MEASUREMENT
+    # _attr_state_class = SensorStateClass.MEASUREMENT   jms weg
 
     def __init__(self, coordinator: EntsoeCoordinator, description: EntsoeEntityDescription, name: str = "") -> None:
         """Initialize the sensor."""
@@ -166,8 +94,7 @@ class EntsoeSensor(CoordinatorEntity, RestoreSensor):
             self._attr_unique_id = f"entsoe.{description.key}"
             self._attr_name = f"{description.name}"
 
-        self._attr_device_class = SensorDeviceClass.MONETARY if description.device_class is None else description.device_class
-        self._attr_state_class = None if self._attr_device_class in [SensorDeviceClass.TIMESTAMP, SensorDeviceClass.MONETARY] else SensorStateClass.MEASUREMENT
+#        self._attr_device_class = SensorDeviceClass.MONETARY if description.device_class is None else description.device_class  # jms weg
         self.entity_description: EntsoeEntityDescription = description
 
         self._update_job = HassJob(self.async_schedule_update_ha_state)
@@ -202,8 +129,7 @@ class EntsoeSensor(CoordinatorEntity, RestoreSensor):
 
         # These return pd.timestamp objects and are therefore not able to get into attributes
         invalid_keys = {"time_min", "time_max"}
-        # Currency is immaterial to the entity key
-        existing_entities = [type.key for type in sensor_descriptions(currency = "")]
+        existing_entities = [type.key for type in SENSOR_TYPES]
         if self.description.key == "avg_price" and self._attr_native_value is not None:
             self._attr_extra_state_attributes = {x: self.coordinator.processed_data()[x] for x in self.coordinator.processed_data() if x not in invalid_keys and x not in existing_entities}
 
@@ -228,12 +154,15 @@ class EntsoeSensor(CoordinatorEntity, RestoreSensor):
 
 
     async def async_get_last_sensor_data(self):
+        # jms:
+        return None
         """Restore Entsoe-e Sensor Extra Stored Data."""
         if (restored_last_extra_data := await self.async_get_last_extra_data()) is None:
             return None
 
         if self.description.key == "avg_price":
-            self.coordinator.data = self.parse_attribute_data_to_coordinator_data(restored_last_extra_data.as_dict()["_attr_extra_state_attributes"])
+            _LOGGER.debug("updating self.coordinator.data weg")
+            #jms: weg self.coordinator.data = self.parse_attribute_data_to_coordinator_data(restored_last_extra_data.as_dict()["_attr_extra_state_attributes"])
 
         return EntsoeSensorExtraStoredData.from_dict(
            restored_last_extra_data.as_dict()
